@@ -26,6 +26,7 @@
     "@types/node": "^22.10.5",
     "aws-cdk": "^2.1029.0",
     "cdk-nag": "^3.0.1",
+    "esbuild": "^0.28.1",
     "ts-node": "^10.9.2",
     "typescript": "^5.7.2"
   },
