@@ -15,9 +15,10 @@ FROM builder AS server
 
 # Node.js 24 LTS (required by Claude Code CLI), git for repo work, gh for
 # the agent to open PRs (uses GITHUB_TOKEN env at call time — no separate
-# auth step required).
+# auth step required). libicu72 is required by the .NET runtime/SDK
+# installed below (globalization support).
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends curl ca-certificates gnupg git && \
+    apt-get install -y --no-install-recommends curl ca-certificates gnupg git libicu72 && \
     curl -fsSL https://deb.nodesource.com/setup_24.x | bash - && \
     apt-get install -y --no-install-recommends nodejs && \
     install -dm 0755 /etc/apt/keyrings && \
@@ -28,6 +29,21 @@ RUN apt-get update && \
     apt-get clean && rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/*
 
 RUN npm install -g @anthropic-ai/claude-code@2.1.142
+
+# .NET 10 SDK — required so the agent can `dotnet build` repos it edits
+# (e.g. Shotlink2 targets net10.0) and catch compile errors *before*
+# opening a PR. dotnet-install.sh auto-detects the arch, so this works
+# under both the amd64 and arm64 legs of the multi-arch build.
+ENV DOTNET_ROOT=/usr/share/dotnet \
+    PATH=/usr/share/dotnet:$PATH \
+    DOTNET_CLI_TELEMETRY_OPTOUT=1 \
+    DOTNET_NOLOGO=1 \
+    DOTNET_SKIP_FIRST_TIME_EXPERIENCE=1
+RUN curl -fsSL https://dot.net/v1/dotnet-install.sh -o /tmp/dotnet-install.sh && \
+    chmod +x /tmp/dotnet-install.sh && \
+    /tmp/dotnet-install.sh --channel 10.0 --install-dir /usr/share/dotnet && \
+    rm /tmp/dotnet-install.sh && \
+    dotnet --version
 
 # Non-root user — Claude Code CLI refuses bypassPermissions as root.
 RUN groupadd appgroup && useradd -m -g appgroup appuser && \

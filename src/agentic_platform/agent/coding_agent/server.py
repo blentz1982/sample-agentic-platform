@@ -226,19 +226,34 @@ def _build_prompt(payload: dict[str, Any]) -> str:
         "request on the cloned repo:",
         "",
         "1. Explore the repo enough to locate the relevant code.",
-        "2. Make the minimal correct change that satisfies the ticket. "
-        "Run the project's tests/linters if they exist.",
-        "3. Create a new branch (e.g. `fix/<ticket-key>-<slug>` or "
+        "2. Make the minimal correct change that satisfies the ticket.",
+        "3. **Build the project and run its tests — this is a hard gate, "
+        "not optional.** Detect the toolchain from the repo and build with "
+        "it before doing anything else:",
+        "   - .NET (`*.sln` / `*.csproj`): `dotnet build` (the .NET SDK is "
+        "installed; run from the solution/project dir). Then `dotnet test` "
+        "if test projects exist.",
+        "   - Node (`package.json`): `npm ci` (or `npm install`) then "
+        "`npm run build` and `npm test` if those scripts exist.",
+        "   - Python (`pyproject.toml`/`setup.py`): install deps and run "
+        "the test command (pytest, etc.) if present.",
+        "   If the build FAILS, you must read the compiler errors, fix "
+        "your change, and rebuild until it succeeds. **Do NOT push a "
+        "branch or open a PR while the build is broken** — a red build is "
+        "a failed task, not a deliverable. If you genuinely cannot make it "
+        "build, stop and report why instead of opening a PR.",
+        "4. Create a new branch (e.g. `fix/<ticket-key>-<slug>` or "
         "`feat/<ticket-key>-<slug>`), commit your work with a clear "
         "message that references the ticket key, and push it to "
         "`origin`.",
-        "4. Open a pull request against the default branch using `gh pr "
+        "5. Open a pull request against the default branch using `gh pr "
         "create`. The PR title should reference the ticket key; the body "
-        "should summarize the change, link back to the ticket, and call "
-        "out anything a reviewer needs to know.",
+        "should summarize the change, link back to the ticket, call out "
+        "anything a reviewer needs to know, and state that the build and "
+        "tests passed locally.",
         "",
         "Do not stop after writing the code locally — the work is only "
-        "complete once the PR exists on GitHub.",
+        "complete once the build passes AND the PR exists on GitHub.",
         "",
     ]
 

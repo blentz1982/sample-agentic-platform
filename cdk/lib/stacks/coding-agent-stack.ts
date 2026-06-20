@@ -44,6 +44,14 @@ export interface CodingAgentStackProps extends StackProps {
    * `cdk deploy -c repoUrl=https://github.com/owner/repo.git`.
    */
   readonly repoUrl?: string;
+
+  /**
+   * Pin the runtime to an image digest (`sha256:...`) instead of the
+   * floating `:latest` tag, so a new image push actually rolls the
+   * runtime on `cdk deploy`. Overridable from the CLI:
+   * `cdk deploy -c imageDigest=sha256:...`.
+   */
+  readonly imageDigest?: string;
 }
 
 export class CodingAgentStack extends Stack {
@@ -68,12 +76,20 @@ export class CodingAgentStack extends Stack {
       );
     }
 
+    // Optional digest pin (see CodingAgentStackProps.imageDigest). When
+    // present, the runtime references the image by `@sha256:...` so each
+    // push rolls the runtime on deploy instead of being a no-op.
+    const digestCtx = this.node.tryGetContext('imageDigest');
+    const imageDigest =
+      (typeof digestCtx === 'string' && digestCtx) || props.imageDigest;
+
     this.agentRuntime = new AgentCoreRuntime(this, 'AgentRuntime', {
       agentName,
       anthropicModel:
         props.anthropicModel ?? 'us.anthropic.claude-sonnet-4-5-20250929-v1:0',
       maxBudgetUsd: props.maxBudgetUsd ?? '5',
       repoUrl,
+      imageDigest,
     });
 
     this.frontDoor = new ApiKeyFrontDoor(this, 'FrontDoor', {

@@ -46,6 +46,18 @@ export interface AgentCoreRuntimeProps {
    * Extra environment variables merged on top of the defaults.
    */
   readonly extraEnvironment?: { [key: string]: string };
+
+  /**
+   * Pin the runtime to a specific image by digest (`sha256:...`) instead
+   * of the floating `:latest` tag. Strongly recommended: AgentCore caches
+   * the resolved digest at create time, so a new push to `:latest` does
+   * NOT roll the runtime — the CFN template is byte-identical and the
+   * deploy is a no-op. Threading the digest in makes every push change the
+   * template, so `cdk deploy` rolls the runtime automatically (and via the
+   * CDK bootstrap role, which has `iam:PassRole`). Omit to fall back to the
+   * `:latest` tag. Provide via `cdk deploy -c imageDigest=sha256:...`.
+   */
+  readonly imageDigest?: string;
 }
 
 export class AgentCoreRuntime extends Construct {
@@ -56,7 +68,15 @@ export class AgentCoreRuntime extends Construct {
   constructor(scope: Construct, id: string, props: AgentCoreRuntimeProps) {
     super(scope, id);
 
-    const { agentName, anthropicModel, maxBudgetUsd, repoUrl } = props;
+    const { agentName, anthropicModel, maxBudgetUsd, repoUrl, imageDigest } = props;
+
+    if (imageDigest && !/^sha256:[0-9a-f]{64}$/.test(imageDigest)) {
+      throw new Error(
+        `imageDigest must be a full "sha256:<64 hex>" digest — got "${imageDigest}". ` +
+          'Get it from `aws ecr describe-images --image-ids imageTag=latest ' +
+          '--query "imageDetails[0].imageDigest"`.',
+      );
+    }
 
     if (!/^[a-z][a-z0-9-]{0,30}$/.test(agentName)) {
       throw new Error(
@@ -119,10 +139,16 @@ export class AgentCoreRuntime extends Construct {
     });
 
     // ─── Runtime ───────────────────────────────────────────────────────
-    const artifact = agentcore.AgentRuntimeArtifact.fromEcrRepository(
-      this.repository,
-      'latest',
-    );
+    // Prefer a digest pin so each new image push changes the CFN template
+    // and `cdk deploy` actually rolls the runtime (AgentCore caches the
+    // resolved digest at create time, so a `:latest` tag never re-rolls).
+    // `fromImageUri` does NOT auto-grant ECR pull the way
+    // `fromEcrRepository` does, so grant it explicitly below.
+    const artifact = imageDigest
+      ? agentcore.AgentRuntimeArtifact.fromImageUri(
+          this.repository.repositoryUriForDigest(imageDigest),
+        )
+      : agentcore.AgentRuntimeArtifact.fromEcrRepository(this.repository, 'latest');
 
     this.runtime = new agentcore.Runtime(this, 'Runtime', {
       runtimeName,
@@ -164,6 +190,13 @@ export class AgentCoreRuntime extends Construct {
     // we added these). Grant the inference profile and the regional
     // foundation models it routes to.
     this.githubTokenSecret.grantRead(this.runtime);
+
+    // `fromImageUri` (the digest path) skips the automatic ECR pull grant
+    // that `fromEcrRepository` performs, so grant it here. Harmless on the
+    // tag path (idempotent).
+    if (imageDigest) {
+      this.repository.grantPull(this.runtime.role);
+    }
 
     const stackForBedrock = Stack.of(this);
     this.runtime.role.addToPrincipalPolicy(
